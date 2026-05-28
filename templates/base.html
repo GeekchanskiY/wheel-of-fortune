@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <title>Wheel of Fortune – Precision Spin</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(circle at 30% 20%, #1e293b, #0f172a);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', 'Poppins', system-ui, -apple-system, 'Inter', sans-serif;
+            padding: 1rem;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2rem;
+            background: rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(6px);
+            border-radius: 64px;
+            padding: 2rem 2rem 2.5rem;
+            box-shadow: 0 20px 35px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+        }
+
+        .wheel-wrapper {
+            position: relative;
+            width: min(480px, 75vw);
+            height: min(480px, 75vw);
+            filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.5));
+        }
+
+        /* premium pointer design */
+        .pointer {
+            position: absolute;
+            top: -18px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 22px solid transparent;
+            border-right: 22px solid transparent;
+            border-top: 48px solid #ffd966;
+            z-index: 20;
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4));
+        }
+        .pointer::after {
+            content: "✨";
+            position: absolute;
+            font-size: 20px;
+            top: -54px;
+            left: -12px;
+            text-shadow: 0 0 4px gold;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+            border-radius: 50%;
+            background: #2d3e5f;
+            box-shadow: 0 0 0 8px rgba(0, 0, 0, 0.3), 0 20px 35px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(255, 215, 0, 0.3);
+            transition: box-shadow 0.2s;
+        }
+
+        button {
+            padding: 14px 38px;
+            border: none;
+            border-radius: 60px;
+            background: linear-gradient(135deg, #ffb347, #ff8c1a);
+            color: white;
+            font-size: 1.6rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.2s;
+            box-shadow: 0 8px 0 #b45f06;
+            letter-spacing: 1px;
+            font-family: inherit;
+            width: 220px;
+            text-shadow: 0 1px 1px black;
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #ffaa33, #ff7b00);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 0 #b45f06;
+        }
+
+        button:active {
+            transform: translateY(4px);
+            box-shadow: 0 4px 0 #b45f06;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            transform: translateY(0);
+            cursor: not-allowed;
+            filter: grayscale(0.1);
+            box-shadow: 0 6px 0 #7a4a0a;
+        }
+
+        .result {
+            font-size: 2rem;
+            font-weight: 800;
+            background: rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(10px);
+            padding: 0.75rem 1.8rem;
+            border-radius: 60px;
+            text-align: center;
+            letter-spacing: 1px;
+            min-width: 240px;
+            border-left: 4px solid #ffd966;
+            border-right: 4px solid #ffd966;
+            color: #ffecb3;
+            font-family: monospace;
+            text-transform: uppercase;
+            box-shadow: 0 5px 12px black;
+        }
+
+        .result span {
+            color: gold;
+            font-weight: 900;
+        }
+
+        @keyframes glowPulse {
+            0% { text-shadow: 0 0 2px gold; }
+            100% { text-shadow: 0 0 12px #ffb347; }
+        }
+        .result:has(span) {
+            animation: glowPulse 0.6s ease-in-out 2;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="wheel-wrapper">
+        <div class="pointer"></div>
+        <canvas id="wheelCanvas" width="500" height="500"></canvas>
+    </div>
+    <button id="spinBtn">🎡 SPIN</button>
+    <div class="result" id="resultMessage">✨ READY ✨</div>
+</div>
+
+<script>
+    (function() {
+        // ----- CONFIGURATION -----
+        const canvas = document.getElementById("wheelCanvas");
+        const ctx = canvas.getContext("2d");
+        const spinButton = document.getElementById("spinBtn");
+        const resultDiv = document.getElementById("resultMessage");
+
+        // Prize sectors
+        const SEGMENTS = [
+            "🎉 100$",      // index 0
+            "🔄 TRY AGAIN",  // index 1
+            "Beer",
+            "Vodka"
+        ];
+
+        // Rich vibrant colors (each segment gets distinct look)
+        const COLOR_PALETTE = [
+            "#dc2626",  // vibrant red
+            "#facc15",  // radiant gold
+            "#10b981",  // emerald
+            "#3b82f6",  // electric blue
+            "#a855f7",  // purple
+            "#f97316",  // orange
+            "#ec4899",  // pink
+            "#06b6d4"   // cyan
+        ];
+
+        // Geometry
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        const radius = 220;       // inner radius for cleaner look
+        const textRadius = 180;    // where text sits
+
+        let currentRotation = 0;      // radians, cumulative rotation
+        let isSpinning = false;
+        let animationFrameId = null;
+
+        // ----- HELPER: dynamic segment count -----
+        const segmentCount = SEGMENTS.length;
+        const anglePerSegment = (Math.PI * 2) / segmentCount;
+
+        // ----- FIXED POINTER WORLD ANGLE (top = -PI/2) -----
+        // The pointer tip points exactly at 12 o'clock direction (upward relative to canvas)
+        // In canvas standard angle (0 = right, increases clockwise? Actually arc uses standard math coords:
+        // 0 rad = East, PI/2 = South, PI = West, 3PI/2 = North.)
+        // The tip is at top = -PI/2  (or 3*PI/2). We'll use -PI/2 for clarity.
+        const POINTER_FIXED_ANGLE = -Math.PI / 2;   // points upward (12 o'clock)
+
+        // ----- DRAW WHEEL with current rotation (radians) -----
+        function drawWheel(rotationRad = 0) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(centerX, centerY);
+            ctx.rotate(rotationRad);   // apply global wheel rotation
+
+            for (let i = 0; i < segmentCount; i++) {
+                const start = i * anglePerSegment;
+                const end = start + anglePerSegment;
+
+                // Draw segment slice
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius, start, end);
+                ctx.closePath();
+                ctx.fillStyle = COLOR_PALETTE[i % COLOR_PALETTE.length];
+                ctx.fill();
+                ctx.strokeStyle = "#FFF9E8";
+                ctx.lineWidth = 2.8;
+                ctx.stroke();
+
+                // Draw white dividing lines from center out (extra crisp)
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.arc(0, 0, radius, start, start);
+                ctx.lineTo(0, 0);
+                ctx.strokeStyle = "#FFF5DD";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw text label (with custom rotation)
+                ctx.save();
+                ctx.rotate(start + anglePerSegment / 2);
+                ctx.textAlign = "right";
+                ctx.textBaseline = "middle";
+                ctx.font = `bold ${Math.max(18, Math.min(28, 480 / segmentCount))}px "Segoe UI", "Poppins", system-ui`;
+                ctx.fillStyle = "#FFFFFF";
+                ctx.shadowColor = "rgba(0,0,0,0.5)";
+                ctx.shadowBlur = 4;
+                let label = SEGMENTS[i];
+                // shorten if needed but fine for two elements
+                ctx.fillText(label, textRadius - 12, 6);
+                ctx.shadowColor = "transparent";
+                ctx.restore();
+            }
+
+            // Decorative inner circle (metal hub)
+            ctx.beginPath();
+            ctx.arc(0, 0, 38, 0, Math.PI * 2);
+            ctx.fillStyle = "#1e1e2f";
+            ctx.shadowBlur = 0;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(0, 0, 28, 0, Math.PI * 2);
+            ctx.fillStyle = "#FFD966";
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(0, 0, 16, 0, Math.PI * 2);
+            ctx.fillStyle = "#B45309";
+            ctx.fill();
+
+            ctx.restore();
+
+            // Extra outer glitter (static ring)
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(255,215,0,0.55)";
+            ctx.lineWidth = 6;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // ----- ACCURATE WINNER DETERMINATION -----
+        // Given the wheel rotation (radians), returns the segment index currently under the fixed pointer (top).
+        // This solves the "incorrect winner definition" bug.
+        function getCurrentSegmentIndex(rotationRad) {
+            // Step 1: world angle of the pointer (fixed in space)
+            const worldPointerAngle = POINTER_FIXED_ANGLE;   // -PI/2 (top)
+
+            // Step 2: Convert to wheel-local coordinates:
+            // In wheel coordinate system, angles are shifted by rotationRad.
+            // localAngle = worldPointerAngle - rotationRad
+            let localAngle = worldPointerAngle - rotationRad;
+
+            // Normalize to [0, 2*PI)
+            const TWO_PI = Math.PI * 2;
+            let normalized = ((localAngle % TWO_PI) + TWO_PI) % TWO_PI;
+
+            // Find which segment covers this angle
+            const idx = Math.floor(normalized / anglePerSegment) % segmentCount;
+            return idx;
+        }
+
+        // ----- EASE OUT CUBIC for smooth stop -----
+        function easeOutCubic(t) {
+            return 1 - Math.pow(1 - t, 3);
+        }
+
+        // ----- SPIN ACTION (with smooth physics) -----
+        function startSpin() {
+            if (isSpinning) return;
+
+            isSpinning = true;
+            spinButton.disabled = true;
+            resultDiv.innerHTML = "🌀 SPINNING... 🌀";
+            resultDiv.style.animation = "none";
+            // force reflow to reset animation
+            void resultDiv.offsetWidth;
+
+            // Spin parameters: more exciting random extra rotations + final random offset
+            const spinDuration = 1300; // ms
+            const minExtraRotations = 6;   // full 360° spins
+            const maxExtraRotations = 12;
+            const extraFullSpins = minExtraRotations + Math.random() * (maxExtraRotations - minExtraRotations);
+            // Additional random angle between 0 and 2PI for unique landing
+            const randomDeltaAngle = Math.random() * Math.PI * 2;
+
+            const startRotation = currentRotation;
+            // targetRotation = currentRotation + extraFullSpins*2PI + randomDeltaAngle
+            const targetRotation = startRotation + (extraFullSpins * Math.PI * 2) + randomDeltaAngle;
+
+            const startTime = performance.now();
+
+            function spinAnimation(now) {
+                const elapsed = now - startTime;
+                let t = Math.min(1, elapsed / spinDuration);
+                const easeProgress = easeOutCubic(t);
+
+                // interpolate rotation
+                currentRotation = startRotation + (targetRotation - startRotation) * easeProgress;
+                drawWheel(currentRotation);
+
+                if (t < 1) {
+                    animationFrameId = requestAnimationFrame(spinAnimation);
+                } else {
+                    // final exact position
+                    currentRotation = targetRotation;
+                    drawWheel(currentRotation);
+                    finalizeSpinResult();
+                }
+            }
+
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            animationFrameId = requestAnimationFrame(spinAnimation);
+        }
+
+        // ----- FINAL RESULT & WINNER LOGIC (fixed pointer)-----
+        function finalizeSpinResult() {
+            // Get winning index based on current rotation and fixed pointer direction
+            const winningIdx = getCurrentSegmentIndex(currentRotation);
+            const prize = SEGMENTS[winningIdx];
+
+            // Visual enhancement: show glamour result
+            resultDiv.innerHTML = `🏆  <span>${prize}</span>  🏆`;
+            resultDiv.style.animation = "glowPulse 0.5s ease-in-out 2";
+
+            // Add dramatic sound effect? no sound needed, but we provide extra feedback
+            if (prize.includes("100$")) {
+                resultDiv.style.borderLeftColor = "#FFD966";
+                resultDiv.style.borderRightColor = "#FFD966";
+                resultDiv.style.background = "rgba(0, 0, 0, 0.85)";
+            } else if (prize.includes("TRY AGAIN")) {
+                resultDiv.style.borderLeftColor = "#f97316";
+                resultDiv.style.borderRightColor = "#f97316";
+            }
+
+            isSpinning = false;
+            spinButton.disabled = false;
+            animationFrameId = null;
+
+            // small console precision test (dev)
+            console.log(`[WINNER] rotation: ${(currentRotation % (Math.PI*2)).toFixed(3)} rad, segment index: ${winningIdx} → ${prize}`);
+        }
+
+        // ----- RESET DEFAULTS & INITIAL DRAW (with correct alignment) -----
+        function initWheel() {
+            // ensures that the initial orientation aligns properly with pointer.
+            // no extra offset needed, but just draw with currentRotation (0)
+            drawWheel(currentRotation);
+            // optional: show initial test winner (for debugging, doesn't affect gameplay)
+            const initialIdx = getCurrentSegmentIndex(currentRotation);
+            console.log(`Initial pointer points to: ${SEGMENTS[initialIdx]} (index ${initialIdx})`);
+            resultDiv.innerHTML = "💫 SPIN TO WIN 💫";
+            resultDiv.style.borderLeftColor = "#ffd966";
+            resultDiv.style.borderRightColor = "#ffd966";
+        }
+
+        // ----- EVENT BINDING -----
+        spinButton.addEventListener("click", () => {
+            if (isSpinning) return;
+            startSpin();
+        });
+
+        // Optional: responsive canvas redraw on resize ? canvas size is fixed but handles container scaling properly via CSS
+        window.addEventListener("resize", () => {
+            if (!isSpinning) {
+                drawWheel(currentRotation);
+            }
+        });
+
+        // initialize wheel & show message
+        initWheel();
+
+        // EXTRA: keyboard support (press Space to spin)
+        window.addEventListener("keydown", (e) => {
+            if (e.code === "Space" && !isSpinning && document.activeElement !== spinButton) {
+                e.preventDefault();
+                startSpin();
+            } else if (e.code === "Space" && spinButton.disabled === false) {
+                e.preventDefault();
+                startSpin();
+            }
+        });
+
+        // Manual touch/click robust: already on button
+        // Hover style for button
+    })();
+</script>
+</body>
+</html>
